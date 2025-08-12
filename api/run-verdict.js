@@ -56,7 +56,9 @@ export default async function handler(req, res) {
     const pm10 = aqIdx >= 0 ? aqJson.hourly.pm10[aqIdx] : null;
 
     const v = verdictForAsthma({ tempC, rh, windKmh, aqi });
-    const line = `${v.icon} ${v.text} – ${fmt(tempC,0)} °C, RH ${fmt(rh,0)}%, wind ${fmt(windKmh,0)} km/h, AQI ${fmt(aqi,0)}`;
+    const line = `🌅 Good morning! Here’s your run check: ${v.icon} ${v.text}  
+🌡️ Temp: ${fmt(tempC,0)}°C | 💧 Humidity: ${fmt(rh,0)}% | 💨 Wind: ${fmt(windKmh,0)} km/h | 🌫️ AQI: ${fmt(aqi,0)}`;
+
 
     // Send to ntfy
     const topic = process.env.NTFY_TOPIC; // your exact topic string from the app
@@ -85,3 +87,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: String(e) });
   }
 }
+
