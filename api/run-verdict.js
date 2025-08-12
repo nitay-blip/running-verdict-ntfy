@@ -5,6 +5,51 @@ const LAT = 31.68778;
 const LON = 34.98361;
 const TZ = "Asia/Jerusalem";
 
+// Map EPA category text, or derive from numeric AQI if text is missing
+function aqiCategory(catStr, aqiVal) {
+  if (catStr) return catStr; // e.g., "Moderate", "Unhealthy"
+  if (aqiVal == null || !Number.isFinite(aqiVal)) return "Unknown";
+  if (aqiVal <= 50) return "Good";
+  if (aqiVal <= 100) return "Moderate";
+  if (aqiVal <= 150) return "Unhealthy for Sensitive Groups";
+  if (aqiVal <= 200) return "Unhealthy";
+  if (aqiVal <= 300) return "Very Unhealthy";
+  return "Hazardous";
+}
+
+// Find the nearest hour with a valid AQI if the target hour is missing
+function findNearestAqi(aqJson, targetISO) {
+  const times = aqJson?.hourly?.time || [];
+  const aqiArr = aqJson?.hourly?.us_aqi || [];
+  const catArr = aqJson?.hourly?.epa_health_concern || [];
+
+  const exactIdx = times.findIndex(t => t.startsWith(targetISO));
+  const hasVal = i => i >= 0 && i < aqiArr.length && aqiArr[i] != null;
+
+  // 1) Try exact 06:00
+  if (hasVal(exactIdx)) {
+    return { aqi: aqiArr[exactIdx], category: aqiCategory(catArr?.[exactIdx], aqiArr[exactIdx]), time: times[exactIdx] };
+  }
+
+  // 2) Walk backward from 06:00 (05:00, 04:00, …)
+  for (let i = exactIdx - 1; i >= 0; i--) {
+    if (hasVal(i)) {
+      return { aqi: aqiArr[i], category: aqiCategory(catArr?.[i], aqiArr[i]), time: times[i] };
+    }
+  }
+
+  // 3) Walk forward (07:00, 08:00, …)
+  for (let i = Math.max(exactIdx + 1, 0); i < times.length; i++) {
+    if (hasVal(i)) {
+      return { aqi: aqiArr[i], category: aqiCategory(catArr?.[i], aqiArr[i]), time: times[i] };
+    }
+  }
+
+  // 4) Nothing found
+  return { aqi: null, category: "Unknown", time: null };
+}
+/
+
 // Build a verdict tuned for asthma and a 30-minute outdoor run
 function verdictForAsthma({ tempC, rh, windKmh, aqi }) {
   if (aqi >= 101) return { icon: "🔴", text: "Indoor only" };
@@ -49,11 +94,13 @@ export default async function handler(req, res) {
     const windMs = idx >= 0 ? wJson.hourly.wind_speed_10m[idx] : null;
     const windKmh = windMs != null ? windMs * 3.6 : null;
 
-    const aqTime = aqJson?.hourly?.time || [];
-    const aqIdx = aqTime.findIndex(t => t.startsWith(`${y}-${m}-${d}T${targetHour}`));
-    const aqi = aqIdx >= 0 ? aqJson.hourly.us_aqi[aqIdx] : null;
-    const pm25 = aqIdx >= 0 ? aqJson.hourly.pm2_5[aqIdx] : null;
-    const pm10 = aqIdx >= 0 ? aqJson.hourly.pm10[aqIdx] : null;
+    const targetISO = `${y}-${m}-${d}T${targetHour}`;
+const aqiInfo = findNearestAqi(aqJson, targetISO);
+const aqi = aqiInfo.aqi;
+const aqiCat = aqiInfo.category;
+const pm25 = null; // keep for future if you want to show these
+const pm10 = null;
+
 
     const v = verdictForAsthma({ tempC, rh, windKmh, aqi });
     const line = `🌅 Good morning! Here’s your run check: ${v.icon} ${v.text}  
@@ -87,4 +134,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: String(e) });
   }
 }
+
 
